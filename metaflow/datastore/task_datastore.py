@@ -231,6 +231,26 @@ class TaskDataStore(object):
         """
         self.save_metadata({self.METADATA_ATTEMPT_SUFFIX: {"time": time.time()}})
 
+    def dumps(self, obj, protocol=2):
+        from types import GeneratorType
+        if isinstance(obj, GeneratorType):
+            print(f'WARNING: Attempting to save a generator object of type {obj}')
+            blob = None
+            for item in obj:
+                print(f'WARNING: Saving generator item of type {type(item)}')
+                if blob is None:
+                    blob = self.dumps(item, protocol=protocol)
+                else:
+                    blob += self.dumps(item, protocol=protocol)
+            
+            if not blob:
+                raise RuntimeError("Cannot save empty generator")
+            return blob
+        else:
+            print(f'WARNING: Attempting to save a non-generator object of type {type(obj)}')
+            return pickle.dumps(obj, protocol=protocol)
+
+
     @only_if_not_done
     @require_mode("w")
     def save_artifacts(self, artifacts_iter, force_v4=False, len_hint=0):
@@ -246,7 +266,7 @@ class TaskDataStore(object):
 
         Parameters
         ----------
-        artifacts : Iterator[(string, object)]
+        artifacts_iter : Iterator[(string, object)]
             Iterator over the human-readable name of the object to save
             and the object itself
         force_v4 : boolean or Dict[string -> boolean]
@@ -261,6 +281,7 @@ class TaskDataStore(object):
 
         def pickle_iter():
             for name, obj in artifacts_iter:
+                print(f'WARNING: Saving artifact {name} of type {type(obj)}')
                 do_v4 = (
                     force_v4 and force_v4
                     if isinstance(force_v4, bool)
@@ -274,12 +295,12 @@ class TaskDataStore(object):
                             "requires Python 3.4 or newer." % name
                         )
                     try:
-                        blob = pickle.dumps(obj, protocol=4)
+                        blob = self.dumps(obj, protocol=4)
                     except TypeError as e:
                         raise UnpicklableArtifactException(name)
                 else:
                     try:
-                        blob = pickle.dumps(obj, protocol=2)
+                        blob = self.dumps(obj, protocol=2)
                         encode_type = "gzip+pickle-v2"
                     except (SystemError, OverflowError):
                         encode_type = "gzip+pickle-v4"
@@ -290,11 +311,13 @@ class TaskDataStore(object):
                                 "serialize large objects." % name
                             )
                         try:
-                            blob = pickle.dumps(obj, protocol=4)
+                            blob = self.dumps(obj, protocol=4)
                         except TypeError as e:
                             raise UnpicklableArtifactException(name)
                     except TypeError as e:
                         raise UnpicklableArtifactException(name)
+                if blob is None:
+                    continue
 
                 self._info[name] = {
                     "size": len(blob),

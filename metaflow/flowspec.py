@@ -589,11 +589,11 @@ class FlowSpec(object):
 
             try:
                 foreach_iter = getattr(self, foreach)
-            except:
+            except Exception as e:
                 msg = (
                     "Foreach variable *self.{var}* in step *{step}* "
-                    "does not exist. Check your variable.".format(
-                        step=step, var=foreach
+                    "does not exist. Check your variable. Error {err}".format(
+                        step=step, var=foreach, err=e
                     )
                 )
                 raise InvalidNextException(msg)
